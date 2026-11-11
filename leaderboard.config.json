@@ -1,0 +1,8 @@
+{
+  "identity": "guest",
+  "boards": [
+    { "id": "harbor-race-v1", "rulesVersion": "v1" },
+    { "id": "canyon-race-v1", "rulesVersion": "v1" },
+    { "id": "vault-race-v1", "rulesVersion": "v1" }
+  ]
+}

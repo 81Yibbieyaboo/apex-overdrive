@@ -1,6 +1,125 @@
 {
   "version": 2,
-  "groups": {},
+  "groups": {
+    "hero-car": {
+      "name": "Hero Car",
+      "order": 10
+    },
+    "race-audio": {
+      "name": "Race Audio",
+      "order": 20
+    },
+    "sharing": {
+      "name": "Sharing Artwork",
+      "order": 30
+    }
+  },
   "bundles": {},
-  "assets": {}
+  "assets": {
+    "assets/audio/boost.mp3": {
+      "path": "/manus-storage/game/sha256/3a383764c181cad90e31994bfbcd87f793e3971cd8110ee93d8c2754b86128b9.mp3",
+      "sha256": "sha256:3a383764c181cad90e31994bfbcd87f793e3971cd8110ee93d8c2754b86128b9",
+      "size": 18433,
+      "assetType": "audio",
+      "groupId": "race-audio"
+    },
+    "assets/audio/drift.mp3": {
+      "path": "/manus-storage/game/sha256/af95ae5af55db3b5e135b9fb29d507707c819e3c5edc806d94cff6eb25b56b75.mp3",
+      "sha256": "sha256:af95ae5af55db3b5e135b9fb29d507707c819e3c5edc806d94cff6eb25b56b75",
+      "size": 37241,
+      "assetType": "audio",
+      "groupId": "race-audio"
+    },
+    "assets/audio/engine.mp3": {
+      "path": "/manus-storage/game/sha256/330dac4f7c5846b1c6aca3faf0afc494350bf48456610c40b27d0baa199a9fcc.mp3",
+      "sha256": "sha256:330dac4f7c5846b1c6aca3faf0afc494350bf48456610c40b27d0baa199a9fcc",
+      "size": 97009,
+      "assetType": "audio",
+      "groupId": "race-audio"
+    },
+    "assets/audio/finish.mp3": {
+      "path": "/manus-storage/game/sha256/7c8bd915745e20ecb77b2f7ac1ed12f96fd74c072f0c5551202baa54f86a31aa.mp3",
+      "sha256": "sha256:7c8bd915745e20ecb77b2f7ac1ed12f96fd74c072f0c5551202baa54f86a31aa",
+      "size": 40585,
+      "assetType": "audio",
+      "groupId": "race-audio"
+    },
+    "assets/audio/jump.mp3": {
+      "path": "/manus-storage/game/sha256/a6bca58e8e58fb5704a98235f14f69a650abbf46e39e5635e7ed623fea85553c.mp3",
+      "sha256": "sha256:a6bca58e8e58fb5704a98235f14f69a650abbf46e39e5635e7ed623fea85553c",
+      "size": 13835,
+      "assetType": "audio",
+      "groupId": "race-audio"
+    },
+    "assets/audio/land.mp3": {
+      "path": "/manus-storage/game/sha256/b3b50fc19262468900a1fa6a9d48db9c7dcacac8f66c51204fc9c303c8b91a8b.mp3",
+      "sha256": "sha256:b3b50fc19262468900a1fa6a9d48db9c7dcacac8f66c51204fc9c303c8b91a8b",
+      "size": 12163,
+      "assetType": "audio",
+      "groupId": "race-audio"
+    },
+    "assets/audio/lap.mp3": {
+      "path": "/manus-storage/game/sha256/66d828a571cdc3c47bb211b28f17ccf48a57b8b7fdd115ba86be3e4881047f73.mp3",
+      "sha256": "sha256:66d828a571cdc3c47bb211b28f17ccf48a57b8b7fdd115ba86be3e4881047f73",
+      "size": 17179,
+      "assetType": "audio",
+      "groupId": "race-audio"
+    },
+    "assets/audio/race-theme.mp3": {
+      "path": "/manus-storage/game/sha256/8a4cf4aa889d686d987cebc6c08d8d251d8aae367c871fab3090e1ce327c1a9f.mp3",
+      "sha256": "sha256:8a4cf4aa889d686d987cebc6c08d8d251d8aae367c871fab3090e1ce327c1a9f",
+      "size": 2228961,
+      "assetType": "audio",
+      "groupId": "race-audio"
+    },
+    "assets/audio/start.mp3": {
+      "path": "/manus-storage/game/sha256/6a7d68f527c6deb5fe92fc3653524b15a375c1f049d2b1d0145e54c304bf30bb.mp3",
+      "sha256": "sha256:6a7d68f527c6deb5fe92fc3653524b15a375c1f049d2b1d0145e54c304bf30bb",
+      "size": 36405,
+      "assetType": "audio",
+      "groupId": "race-audio"
+    },
+    "assets/audio/ui.mp3": {
+      "path": "/manus-storage/game/sha256/89641caf5d6a9e31902e45888ab5ddfd371af1dd192c8a2d3dff059e70d72650.mp3",
+      "sha256": "sha256:89641caf5d6a9e31902e45888ab5ddfd371af1dd192c8a2d3dff059e70d72650",
+      "size": 8820,
+      "assetType": "audio",
+      "groupId": "race-audio"
+    },
+    "assets/audio/wallride.mp3": {
+      "path": "/manus-storage/game/sha256/d1a2773656bb5ac1ebad0ee1a1292637a08a8ecb9d8e185278d80081fdc88efc.mp3",
+      "sha256": "sha256:d1a2773656bb5ac1ebad0ee1a1292637a08a8ecb9d8e185278d80081fdc88efc",
+      "size": 48944,
+      "assetType": "audio",
+      "groupId": "race-audio"
+    },
+    "assets/models/apex-car.glb": {
+      "path": "/manus-storage/game/sha256/ddc62801d308a9d3cf423f55382237207e214939e68d06f56d1cc58206a673ca.glb",
+      "sha256": "sha256:ddc62801d308a9d3cf423f55382237207e214939e68d06f56d1cc58206a673ca",
+      "size": 11266220,
+      "assetType": "model",
+      "groupId": "hero-car"
+    },
+    "assets/share/favicon-32.png": {
+      "path": "/manus-storage/game/sha256/43ce00ec7bc7683dba75148e8b654000ffc9bc46b3ef7dc4f92847a8aab38d6c.png",
+      "sha256": "sha256:43ce00ec7bc7683dba75148e8b654000ffc9bc46b3ef7dc4f92847a8aab38d6c",
+      "size": 1530,
+      "assetType": "image",
+      "groupId": "sharing"
+    },
+    "assets/share/favicon.png": {
+      "path": "/manus-storage/game/sha256/ba3ada1fe0c5eb7fc41c49c1c9a84cbb047091297146f006fbdb3bf849b8cbcf.png",
+      "sha256": "sha256:ba3ada1fe0c5eb7fc41c49c1c9a84cbb047091297146f006fbdb3bf849b8cbcf",
+      "size": 24174,
+      "assetType": "image",
+      "groupId": "sharing"
+    },
+    "assets/share/og-cover.png": {
+      "path": "/manus-storage/game/sha256/6e6181c3379cca690ca7aa89dbcdf82a58f7f99d1d0ebb82cefb2e8e99b08a87.png",
+      "sha256": "sha256:6e6181c3379cca690ca7aa89dbcdf82a58f7f99d1d0ebb82cefb2e8e99b08a87",
+      "size": 938236,
+      "assetType": "image",
+      "groupId": "sharing"
+    }
+  }
 }

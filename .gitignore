@@ -2,3 +2,21 @@ node_modules/
 dist/
 shots/
 /.manus-webdev/preview-identity.json
+
+.scratch/
+# Assets restored from assets.lock.json
+/assets/audio/boost.mp3
+/assets/audio/drift.mp3
+/assets/audio/engine.mp3
+/assets/audio/finish.mp3
+/assets/audio/jump.mp3
+/assets/audio/land.mp3
+/assets/audio/lap.mp3
+/assets/audio/race-theme.mp3
+/assets/audio/start.mp3
+/assets/audio/ui.mp3
+/assets/audio/wallride.mp3
+/assets/models/apex-car.glb
+/assets/share/favicon-32.png
+/assets/share/favicon.png
+/assets/share/og-cover.png

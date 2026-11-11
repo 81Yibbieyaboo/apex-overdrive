@@ -1,40 +1,64 @@
 import { CONFIG, DEFAULT_CONFIG } from './config'
 
 type Mode = 'LIVE' | 'NEXT_ACTION' | 'NEXT_RUN'
-type Boundary = 'jump' | 'dash' | 'run'
-type Control = { id: string; type: 'number'; category: string; label: string; description: string; unit: string;
-  default: number; min: number; max: number; step: number; applyMode: Mode; integrity: 'COSMETIC' | 'GAMEPLAY' }
+type Boundary = 'run'
+type Control = {
+  id: string
+  type: 'number'
+  category: string
+  label: string
+  description: string
+  unit: string
+  default: number
+  min: number
+  max: number
+  step: number
+  applyMode: Mode
+  integrity: 'COSMETIC' | 'GAMEPLAY'
+}
 type Binding = { control: Control; boundary?: Boundary; read(): number; write(value: number): void }
 
 const bindings: Binding[] = []
+
 function number<S extends keyof typeof CONFIG>(section: S, key: keyof typeof CONFIG[S] & string,
-  label: string, min: number, max: number, step: number, unit: string, boundary?: Boundary): void {
+  label: string, min: number, max: number, step: number, unit: string, category: string, boundary?: Boundary): void {
   const values = CONFIG[section] as Record<string, number>
   const defaults = DEFAULT_CONFIG[section] as Record<string, number>
-  bindings.push({ control: Object.freeze({ id: `${section}.${key}`, type: 'number', category: section === 'player' ? 'Movement' : section === 'camera' ? 'Camera' : 'Run',
-    label, description: boundary === 'jump' ? 'Applies when the next jump starts.' : boundary === 'dash' ? 'Applies when the next dash starts.' : boundary === 'run' ? 'Applies when a new run starts.' : 'Updates this preview immediately.',
-    unit, default: defaults[key], min, max, step,
-    applyMode: boundary === 'run' ? 'NEXT_RUN' : boundary ? 'NEXT_ACTION' : 'LIVE',
-    integrity: section === 'camera' ? 'COSMETIC' : 'GAMEPLAY' }), boundary,
-    read: () => values[key], write: value => { values[key] = value } })
+  bindings.push({
+    control: Object.freeze({
+      id: `${section}.${key}`,
+      type: 'number',
+      category,
+      label,
+      description: boundary ? 'Applies when the next race starts.' : 'Updates this preview immediately.',
+      unit,
+      default: defaults[key],
+      min,
+      max,
+      step,
+      applyMode: boundary ? 'NEXT_RUN' : 'LIVE',
+      integrity: section === 'camera' ? 'COSMETIC' : 'GAMEPLAY',
+    }),
+    boundary,
+    read: () => values[key],
+    write: value => { values[key] = value },
+  })
 }
-number('player', 'walkSpeed', 'Walking speed', 1, 14, 0.5, 'm/s')
-number('player', 'sprintSpeed', 'Sprint speed', 1, 20, 0.5, 'm/s')
-number('player', 'acceleration', 'Acceleration', 12, 120, 1, '')
-number('player', 'airControl', 'Air control', 0, 1, 0.05, '')
-number('player', 'jumpSpeed', 'Jump strength', 4, 16, 0.5, 'm/s', 'jump')
-number('player', 'dashSpeed', 'Dash speed', 8, 30, 1, 'm/s', 'dash')
-number('player', 'dashTime', 'Dash duration', 0.08, 0.4, 0.02, 's', 'dash')
-number('camera', 'fov', 'Field of view', 40, 100, 1, '°')
-number('camera', 'distance', 'Camera distance', 3, 12, 0.1, 'm')
-number('camera', 'follow', 'Camera follow speed', 2, 20, 1, '')
-number('run', 'seconds', 'Time limit', 30, 300, 10, 's', 'run')
-number('run', 'lives', 'Starting lives', 1, 10, 1, '', 'run')
+
+number('car', 'maxSpeed', 'Top speed', 35, 90, 1, 'm/s', 'Car', 'run')
+number('car', 'acceleration', 'Acceleration', 10, 45, 1, 'm/s²', 'Car', 'run')
+number('car', 'steerSpeed', 'Steering authority', 6, 20, 0.5, 'm/s', 'Car', 'run')
+number('car', 'steerGrip', 'Lateral grip', 3, 16, 0.5, '', 'Car', 'run')
+number('car', 'driftGrip', 'Drift grip', 1, 8, 0.1, '', 'Car', 'run')
+number('car', 'boostTime', 'Boost duration', 0.5, 3, 0.05, 's', 'Car', 'run')
+number('car', 'rampMinSpeed', 'Ramp launch threshold', 10, 35, 1, 'm/s', 'Car', 'run')
+number('camera', 'distance', 'Chase distance', 4, 14, 0.2, 'm', 'Camera')
+number('camera', 'height', 'Chase height', 1.2, 6, 0.1, 'm', 'Camera')
+number('camera', 'fov', 'Base field of view', 45, 90, 1, '°', 'Camera')
+number('run', 'countdown', 'Start countdown', 0, 5, 0.2, 's', 'Race', 'run')
 
 const byId = new Map(bindings.map(binding => [binding.control.id, binding]))
 let requested = Object.fromEntries(bindings.map(({ control }) => [control.id, control.default]))
-const valid = (values: Record<string, number>) => values['player.walkSpeed'] <= values['player.sprintSpeed']
-
 let unranked = false
 const gameplayModified = () => bindings.some(binding => binding.control.integrity === 'GAMEPLAY' && binding.read() !== binding.control.default)
 
@@ -42,7 +66,10 @@ export const tuning = {
   get unranked(): boolean { return unranked },
   controls: Object.freeze(bindings.map(binding => binding.control)),
   read() {
-    return { requested: { ...requested }, active: Object.fromEntries(bindings.map(binding => [binding.control.id, binding.read()])) }
+    return {
+      requested: { ...requested },
+      active: Object.fromEntries(bindings.map(binding => [binding.control.id, binding.read()])),
+    }
   },
   apply(patch: unknown): void {
     if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('Invalid patch')
@@ -54,13 +81,7 @@ export const tuning = {
       const steps = (value - control.min) / control.step
       if (value !== control.default && Math.abs(steps - Math.round(steps)) > 1e-7) throw new Error('Invalid increment')
     }
-    const candidate = { ...requested, ...patch } as Record<string, number>
-    const nextActive = this.read().active
-    for (const [id, value] of entries) if (byId.get(id)!.control.applyMode === 'LIVE') nextActive[id] = value
-    if (!valid(candidate) || !valid(nextActive)) throw new Error('Walking speed must not exceed sprint speed')
-    // All writes are simple assignments, synchronously committed before the next
-    // physics/render callback. No engine callbacks run during this transaction.
-    requested = candidate
+    requested = { ...requested, ...patch }
     for (const [id, value] of entries) {
       const binding = byId.get(id)!
       if (binding.control.applyMode === 'LIVE') binding.write(value)
@@ -68,8 +89,9 @@ export const tuning = {
     unranked ||= gameplayModified()
   },
   activate(boundary: Boundary): void {
-    for (const binding of bindings) if (binding.boundary === boundary) binding.write(requested[binding.control.id])
-    // Reset only at a new run; resetting values mid-run cannot restore eligibility.
-    unranked = boundary === 'run' ? gameplayModified() : unranked || gameplayModified()
+    for (const binding of bindings) {
+      if (binding.boundary === boundary) binding.write(requested[binding.control.id])
+    }
+    unranked = gameplayModified()
   },
 }

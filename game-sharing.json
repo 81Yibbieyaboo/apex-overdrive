@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 2,
+  "title": "Apex Overdrive",
+  "description": "An original low-poly F1-style arcade racer. Drift through three circuits, launch off ramps, chase fastest times, and survive the Vault Ring wall ride.",
+  "defaultCaptions": {
+    "x": "Hold the line. Find the air. Apex Overdrive is an original low-poly F1-style arcade racer with three circuits, ramps, drift boosts, and a magnetic wall ride.",
+    "facebook": "Apex Overdrive: an original low-poly F1-style arcade racer. Three circuits, big jumps, drift boosts, and the Vault Ring wall ride. How fast can you lap?",
+    "reddit": "I made Apex Overdrive, an original low-poly F1-style arcade racer with three circuits, jump ramps, a live timer, and a magnetic wall ride. Would love feedback on the handling and track layouts.",
+    "discord": "Apex Overdrive is live: an original low-poly F1-style arcade racer with three circuits, ramps, drift boosts, and a magnetic wall ride. Set a time on the global board."
+  },
+  "assets": {
+    "og": "assets/share/og-cover.png",
+    "favicon": "assets/share/favicon.png"
+  }
+}

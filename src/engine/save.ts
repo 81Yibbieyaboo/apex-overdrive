@@ -1,51 +1,58 @@
-/**
- * Versioned local save. Everything the player keeps between sessions lives in one JSON record so
- * it is easy to migrate. Corrupt or foreign data falls back to defaults instead of crashing.
- */
-export type Locale = 'en' | 'zh-CN'
+import type { TrackId } from '../game/tracks'
+
 export type Quality = 'low' | 'medium' | 'high'
 
-export type ScoreEntry = { name: string; score: number; seconds: number; at: number }
+export type TrackBest = {
+  raceMs: number
+  bestLapMs: number
+  updatedAt: number
+}
 
 export type SaveData = {
-  version: 1
-  /** '' = never chosen; the game follows the browser language until the player picks one. */
-  locale: Locale | ''
+  version: 2
   musicVolume: number
   sfxVolume: number
   muted: boolean
-  sensitivity: number
-  invertY: boolean
   quality: Quality
   reducedMotion: boolean
-  tutorialDone: boolean
   playerName: string
-  leaderboard: ScoreEntry[]
+  lastTrack: TrackId
+  trackBests: Partial<Record<TrackId, TrackBest>>
 }
 
-export const SAVE_KEY = 'game3d.save'
-export const LEADERBOARD_SIZE = 10
+export const SAVE_KEY = 'apex-overdrive.save.v2'
 
 export function defaultSave(): SaveData {
   return {
-    version: 1,
-    locale: '',
-    musicVolume: 0.7,
-    sfxVolume: 0.8,
+    version: 2,
+    musicVolume: 0.58,
+    sfxVolume: 0.82,
     muted: false,
-    sensitivity: 1,
-    invertY: false,
     quality: 'high',
     reducedMotion: false,
-    tutorialDone: false,
-    playerName: 'PLAYER',
-    leaderboard: [],
+    playerName: 'APEX DRIVER',
+    lastTrack: 'harbor',
+    trackBests: {},
   }
 }
 
 const clamp01 = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : fallback)
+const isTrackId = (v: unknown): v is TrackId => v === 'harbor' || v === 'canyon' || v === 'vault'
 
-/** Parse untrusted stored JSON into a valid SaveData (pure; unit tested). */
+function cleanBest(value: unknown): TrackBest | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const v = value as Record<string, unknown>
+  const raceMs = typeof v.raceMs === 'number' && Number.isFinite(v.raceMs) && v.raceMs > 0 ? Math.round(v.raceMs) : 0
+  const bestLapMs = typeof v.bestLapMs === 'number' && Number.isFinite(v.bestLapMs) && v.bestLapMs > 0 ? Math.round(v.bestLapMs) : 0
+  if (!raceMs) return undefined
+  return {
+    raceMs,
+    bestLapMs,
+    updatedAt: typeof v.updatedAt === 'number' && Number.isFinite(v.updatedAt) ? v.updatedAt : 0,
+  }
+}
+
+/** Parse both the old starter save and the Apex Overdrive v2 record without throwing. */
 export function parseSave(raw: string | null): SaveData {
   const base = defaultSave()
   if (!raw) return base
@@ -57,52 +64,62 @@ export function parseSave(raw: string | null): SaveData {
   } catch {
     return base
   }
-  if (data.version !== 1) return base
-  const board = Array.isArray(data.leaderboard) ? data.leaderboard : []
+  if (data.version !== 1 && data.version !== 2) return base
+  const trackBests: Partial<Record<TrackId, TrackBest>> = {}
+  if (data.trackBests && typeof data.trackBests === 'object' && !Array.isArray(data.trackBests)) {
+    for (const [key, value] of Object.entries(data.trackBests as Record<string, unknown>)) {
+      if (!isTrackId(key)) continue
+      const best = cleanBest(value)
+      if (best) trackBests[key] = best
+    }
+  }
+  const quality = data.quality === 'low' || data.quality === 'medium' || data.quality === 'high' ? data.quality : base.quality
+  const playerName = typeof data.playerName === 'string' && data.playerName.trim()
+    ? data.playerName.trim().replace(/[<>]/g, '').slice(0, 20)
+    : base.playerName
   return {
-    version: 1,
-    locale: data.locale === 'en' || data.locale === 'zh-CN' ? data.locale : '',
+    version: 2,
     musicVolume: clamp01(data.musicVolume, base.musicVolume),
     sfxVolume: clamp01(data.sfxVolume, base.sfxVolume),
     muted: data.muted === true,
-    sensitivity: typeof data.sensitivity === 'number' && data.sensitivity >= 0.2 && data.sensitivity <= 3 ? data.sensitivity : base.sensitivity,
-    invertY: data.invertY === true,
-    quality: data.quality === 'low' || data.quality === 'medium' || data.quality === 'high' ? data.quality : base.quality,
+    quality,
     reducedMotion: data.reducedMotion === true,
-    tutorialDone: data.tutorialDone === true,
-    playerName: typeof data.playerName === 'string' && data.playerName.trim() ? data.playerName.trim().slice(0, 16) : base.playerName,
-    leaderboard: board
-      .filter((e): e is ScoreEntry => !!e && typeof e === 'object' && typeof (e as ScoreEntry).name === 'string' && Number.isFinite((e as ScoreEntry).score))
-      .map(e => ({ name: e.name.slice(0, 16), score: Math.max(0, Math.floor(e.score)), seconds: Number.isFinite(e.seconds) ? e.seconds : 0, at: Number.isFinite(e.at) ? e.at : 0 }))
-      .slice(0, LEADERBOARD_SIZE),
+    playerName,
+    lastTrack: isTrackId(data.lastTrack) ? data.lastTrack : base.lastTrack,
+    trackBests,
   }
-}
-
-/** Insert a run into a bounded, deterministically ordered leaderboard (higher score, then faster, then earlier). */
-export function insertScore(board: ScoreEntry[], entry: ScoreEntry): { board: ScoreEntry[]; rank: number } {
-  const next = [...board, entry].sort((a, b) => b.score - a.score || a.seconds - b.seconds || a.at - b.at).slice(0, LEADERBOARD_SIZE)
-  return { board: next, rank: next.indexOf(entry) }
 }
 
 export class SaveStore {
   data: SaveData
-
   constructor(private readonly storage: Pick<Storage, 'getItem' | 'setItem'> | undefined = globalThis.localStorage) {
     let raw: string | null = null
     try {
       raw = this.storage?.getItem(SAVE_KEY) ?? null
+      if (raw === null) raw = this.storage?.getItem('game3d.save') ?? null
     } catch {
       raw = null
     }
     this.data = parseSave(raw)
   }
-
   update(patch: Partial<SaveData>): void {
-    this.data = { ...this.data, ...patch }
+    this.data = { ...this.data, ...patch, version: 2 }
     try {
       this.storage?.setItem(SAVE_KEY, JSON.stringify(this.data))
     } catch {
-      // Private browsing or quota: the game keeps working with in-memory settings.
+      // Private browsing or quota: keep the in-memory settings and records.
     }
   }
+}
+
+export function recordBest(save: SaveData, trackId: TrackId, raceMs: number, bestLapMs: number): { data: SaveData; raceBest: boolean; lapBest: boolean } {
+  const previous = save.trackBests[trackId]
+  const raceBest = !previous || raceMs < previous.raceMs
+  const lapBest = !previous || bestLapMs < previous.bestLapMs
+  const next: TrackBest = {
+    raceMs: raceBest ? raceMs : previous.raceMs,
+    bestLapMs: lapBest ? bestLapMs : previous.bestLapMs,
+    updatedAt: Date.now(),
+  }
+  return { data: { ...save, trackBests: { ...save.trackBests, [trackId]: next } }, raceBest, lapBest }
 }

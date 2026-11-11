@@ -1,67 +1,83 @@
 import * as THREE from 'three'
-import { RAPIER, type Physics } from '../engine/physics'
 import { CONFIG } from './config'
-
-const C = CONFIG.camera
+import type { Car } from './car'
+import type { TrackModel } from './tracks'
 
 /**
- * Orbit follow camera. Yaw/pitch come from mouse, right stick or touch drag; the boom shortens
- * when level geometry is between the player and the camera so the player never disappears.
+ * Third-person chase camera. The camera basis leans with the car through the wall ride while
+ * retaining a world-up bias, so the horizon rotates enough to sell the vertical track without
+ * making steering unreadable.
  */
-export class FollowCamera {
-  readonly camera = new THREE.PerspectiveCamera(C.fov, 1, 0.1, 500)
-  yaw = 0
-  pitch = 0.42
-  private distance: number = C.distance
-  private readonly focus = new THREE.Vector3()
+export class CameraRig {
+  readonly camera: THREE.PerspectiveCamera
   private shake = 0
+  private currentUp = new THREE.Vector3(0, 1, 0)
+  private orbit = 0.1
+  private reducedMotion = false
 
-  constructor(private readonly physics: Physics, private readonly exclude: RAPIER.Collider) {}
-
-  addShake(amount: number): void {
-    this.shake = Math.min(1, this.shake + amount)
+  constructor(aspect: number) {
+    this.camera = new THREE.PerspectiveCamera(CONFIG.camera.fov, aspect, 0.08, 1200)
+    this.camera.position.set(0, 6, 14)
   }
 
-  /** Snap without smoothing (spawn, respawn). */
-  reset(target: THREE.Vector3, yaw = this.yaw): void {
-    this.yaw = yaw
-    this.focus.copy(target)
-    this.distance = C.distance
-    this.update(target, { x: 0, y: 0 }, 1, true)
+  setReducedMotion(value: boolean): void {
+    this.reducedMotion = value
   }
 
-  update(target: THREE.Vector3, look: { x: number; y: number }, frameSeconds: number, snap = false, reducedMotion = false): void {
-    if (this.camera.fov !== C.fov) {
-      this.camera.fov = C.fov
-      this.camera.updateProjectionMatrix()
-    }
-    this.yaw -= look.x
-    this.pitch = THREE.MathUtils.clamp(this.pitch + look.y, C.minPitch, C.maxPitch)
+  impact(intensity: number): void {
+    this.shake = Math.max(this.shake, Math.min(1, intensity))
+  }
 
-    const aim = target.clone().add(new THREE.Vector3(0, C.height * 0.45, 0))
-    if (snap) this.focus.copy(aim)
-    else {
-      // Follow horizontally a bit tighter than vertically so jumps don't bounce the whole view.
-      const k = 1 - Math.exp(-C.follow * frameSeconds)
-      const kv = 1 - Math.exp(-C.follow * 0.55 * frameSeconds)
-      this.focus.x += (aim.x - this.focus.x) * k
-      this.focus.z += (aim.z - this.focus.z) * k
-      this.focus.y += (aim.y - this.focus.y) * kv
-    }
+  showcase(car: Car, track: TrackModel, dt: number, speedScale = 1): void {
+    this.orbit += dt * 0.18 * speedScale
+    const target = car.root.position.clone().add(new THREE.Vector3(0, 0.95, 0))
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(car.root.quaternion)
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(car.root.quaternion)
+    const orbitPos = target.clone()
+      .addScaledVector(forward, Math.cos(this.orbit) * 9.4)
+      .addScaledVector(right, Math.sin(this.orbit) * 11.4)
+      .add(new THREE.Vector3(0, 3.2 + Math.sin(this.orbit * 0.8) * 0.45, 0))
+    const ground = track.surfacePoint(car.t, car.lateral, 0.4)
+    orbitPos.y = Math.max(orbitPos.y, ground.y + 1.3)
+    this.camera.position.lerp(orbitPos, 1 - Math.exp(-4.2 * dt))
+    this.currentUp.lerp(new THREE.Vector3(0, 1, 0), 1 - Math.exp(-5 * dt)).normalize()
+    this.camera.up.copy(this.currentUp)
+    this.camera.lookAt(target)
+    this.camera.fov = THREE.MathUtils.damp(this.camera.fov, 52, 3, dt)
+    this.camera.updateProjectionMatrix()
+    this.shake = 0
+  }
 
-    const dir = new THREE.Vector3(Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), Math.cos(this.yaw) * Math.cos(this.pitch))
-    let wanted: number = C.distance
-    const hit = this.physics.world.castRay(new RAPIER.Ray(this.focus, dir), C.distance, true, undefined, undefined, this.exclude)
-    if (hit) wanted = Math.max(1.2, hit.timeOfImpact - 0.35)
-    // Pull in instantly when blocked, ease back out when clear.
-    this.distance = wanted < this.distance || snap ? wanted : THREE.MathUtils.damp(this.distance, wanted, 4, frameSeconds)
-
-    this.camera.position.copy(this.focus).addScaledVector(dir, this.distance)
-    this.camera.lookAt(this.focus)
-    if (this.shake > 0 && !reducedMotion) {
-      const s = this.shake * this.shake * 0.35
-      this.camera.position.add(new THREE.Vector3((Math.random() - 0.5) * s, (Math.random() - 0.5) * s, (Math.random() - 0.5) * s))
+  chase(car: Car, track: TrackModel, dt: number): void {
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(car.root.quaternion).normalize()
+    const carUp = new THREE.Vector3(0, 1, 0).applyQuaternion(car.root.quaternion).normalize()
+    const speedK = THREE.MathUtils.clamp(Math.abs(car.speed) / 58, 0, 1)
+    const portrait = this.camera.aspect < 0.82 ? 2.4 : this.camera.aspect < 1.08 ? 1.1 : 0
+    const distance = CONFIG.camera.distance + speedK * 2.2 + (car.airborne ? 1.2 : 0) + portrait - (car.wallRiding ? 1.1 : 0)
+    const height = CONFIG.camera.height + speedK * 0.55 + portrait * 0.18
+    const desired = car.root.position.clone()
+      .addScaledVector(forward, -distance)
+      .addScaledVector(carUp, height)
+    const surface = track.surfacePoint(car.t, car.lateral, 0.5)
+    desired.y = Math.max(desired.y, surface.y + 1.15)
+    const follow = 1 - Math.exp(-CONFIG.camera.follow * dt)
+    this.camera.position.lerp(desired, follow)
+    const targetUp = new THREE.Vector3(0, 1, 0).lerp(carUp, car.wallRiding ? 0.7 : 0.28).normalize()
+    this.currentUp.lerp(targetUp, 1 - Math.exp(-5.8 * dt)).normalize()
+    if (this.reducedMotion) this.currentUp.lerp(new THREE.Vector3(0, 1, 0), 1 - Math.exp(-8 * dt)).normalize()
+    this.camera.up.copy(this.currentUp)
+    const lookAhead = (5.2 + speedK * 3) * (car.wallRiding ? 0.55 : 1)
+    const lookTarget = car.root.position.clone().addScaledVector(forward, lookAhead).addScaledVector(carUp, 1.1)
+    this.camera.lookAt(lookTarget)
+    const fov = CONFIG.camera.fov + speedK * CONFIG.camera.speedFov + (car.boostTimer > 0 ? 3.5 : 0)
+    this.camera.fov = THREE.MathUtils.damp(this.camera.fov, fov, 3.8, dt)
+    this.camera.updateProjectionMatrix()
+    if (this.shake > 0.001 && !this.reducedMotion) {
+      const amp = this.shake * 0.16
+      this.camera.position.x += (Math.random() - 0.5) * amp
+      this.camera.position.y += (Math.random() - 0.5) * amp
+      this.camera.rotateZ((Math.random() - 0.5) * this.shake * 0.006)
+      this.shake = Math.max(0, this.shake - dt * CONFIG.camera.shakeDecay)
     }
-    this.shake = Math.max(0, this.shake - frameSeconds * 2.5)
   }
 }

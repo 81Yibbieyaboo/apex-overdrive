@@ -1,158 +1,248 @@
 import './styles/main.css'
 import { Audio } from './engine/audio'
-import { I18n, resolveLocale } from './engine/i18n'
 import { Input } from './engine/input'
 import { GameLoop } from './engine/loop'
-import { SAVE_KEY, SaveStore, type SaveData } from './engine/save'
+import { SAVE_KEY, SaveStore, recordBest } from './engine/save'
+import { AUDIO_URLS } from './game/assets'
 import type { Game } from './game/game'
+import type { Renderer } from './engine/renderer'
+import type { TrackDef, TrackId } from './game/tracks'
+import { tuning } from './game/tuning'
+import { Online, type Ticket } from './online/leaderboard'
 import { TouchControls } from './ui/touch'
 import { Ui } from './ui/ui'
 
 async function boot(): Promise<void> {
   const canvas = document.querySelector<HTMLCanvasElement>('#game')!
-  const firstRun = safeGet(SAVE_KEY) === null
+  const root = document.querySelector<HTMLElement>('#ui')!
+  let firstRun = false
+  try { firstRun = localStorage.getItem(SAVE_KEY) === null } catch { firstRun = true }
   const save = new SaveStore()
-
-  const i18n = new I18n(resolveLocale(save.data.locale, navigator.languages))
-  const input = new Input(canvas)
+  const input = new Input()
   const audio = new Audio()
+  const online = new Online()
   let game: Game | undefined
-  let lockLostAt = 0
+  let renderer: Renderer | undefined
+  let loop: GameLoop
+  let activeTicket: Promise<Ticket | null> = Promise.resolve(null)
+  let submitting = false
+  let currentResult: { totalMs: number; bestLapMs: number; lapTimesMs: number[]; track: TrackDef; unranked: boolean } | null = null
 
-  const applySettings = (d: SaveData) => {
-    input.sensitivity = d.sensitivity
-    input.invertY = d.invertY
-    audio.setVolumes(d.musicVolume, d.sfxVolume, d.muted)
-    if (game) game.reducedMotion = d.reducedMotion
+  const applySettings = () => {
+    audio.setVolumes(save.data.musicVolume, save.data.sfxVolume, save.data.muted)
+    game?.setReducedMotion(save.data.reducedMotion)
   }
 
-  const startRun = (tutorial: boolean) => {
+  const syncOnlineStatus = () => {
+    ui.setOnlineStatus(online.status, online.status === 'ready' ? 'GLOBAL BOARD' : online.status === 'connecting' ? 'CONNECTING' : 'LOCAL MODE')
+  }
+
+  const startRace = () => {
     if (!game) return
     audio.unlock()
     audio.startMusic()
-    game.start(tutorial)
+    online.clearRun()
+    game.startRace()
     ui.show('hud')
     loop.resetAccumulator()
-    input.lockPointer()
-  }
-  const pause = () => {
-    if (game?.mode !== 'playing') return
-    game.pause()
-    ui.show('pause')
-    input.unlockPointer()
-  }
-  const resume = () => {
-    if (game?.mode !== 'paused') return
-    game.resume()
-    ui.show('hud')
-    loop.resetAccumulator()
-    input.lockPointer()
+    currentResult = null
+    submitting = false
+    const track = game.selectedTrackId
+    if (game.snapshot().ranked) {
+      activeTicket = (async () => {
+        await online.setName(save.data.playerName)
+        syncOnlineStatus()
+        const ticket = await online.beginRun(track)
+        syncOnlineStatus()
+        return ticket
+      })().catch(error => {
+        console.warn('Online run ticket unavailable; the race will remain local.', error)
+        online.status = 'offline'
+        syncOnlineStatus()
+        return null
+      })
+    } else {
+      activeTicket = Promise.resolve(null)
+    }
   }
 
-  const ui = new Ui(i18n, save, audio, input, {
-    play: () => startRun(!save.data.tutorialDone),
-    restart: () => startRun(false),
-    resume,
+  const submitResult = async () => {
+    if (!game || !currentResult || submitting) return
+    if (currentResult.unranked) {
+      ui.setScoreStatus({ status: 'unranked' })
+      return
+    }
+    submitting = true
+    ui.setScoreStatus({ status: 'pending' })
+    try {
+      const ticket = await activeTicket
+      if (!ticket) throw Object.assign(new Error('online_unavailable'), { code: 'online_unavailable' })
+      const outcome = await online.submit(currentResult.track.id, currentResult.totalMs)
+      ui.setScoreStatus({ status: 'success', rank: outcome.rank })
+    } catch (error) {
+      const code = (error as { code?: string }).code ?? 'online_unavailable'
+      const status = (error as { status?: number }).status ?? 0
+      const retryable = online.hasTicket && (code === 'network_unavailable' || code === 'rate_limited' || status >= 500)
+      const message = code === 'score_outside_rules' ? 'global time not accepted' : code === 'online_unavailable' || code === 'no_active_run_ticket' ? 'global post unavailable' : code
+      ui.setScoreStatus({ status: 'error', message, retryable })
+    } finally {
+      submitting = false
+    }
+  }
+
+  const ui = new Ui(root, save, audio, input, {
+    selectTrack: (id: TrackId) => {
+      save.update({ lastTrack: id })
+      game?.selectTrack(id)
+      ui.setSelectedTrack(id)
+    },
+    start: startRace,
+    restart: startRace,
+    resume: () => {
+      if (!game || game.mode !== 'paused') return
+      game.resume()
+      ui.show('hud')
+      loop.resetAccumulator()
+    },
+    pause: () => {
+      if (!game || (game.mode !== 'playing' && game.mode !== 'countdown')) return
+      game.pause()
+      ui.show('pause')
+      loop.resetAccumulator()
+    },
     quit: () => {
+      online.clearRun()
       game?.toTitle()
+      if (game) ui.setSelectedTrack(game.selectedTrackId)
       ui.show('title')
-      input.unlockPointer()
+      ui.refreshAll()
+      loop.resetAccumulator()
     },
     settings: patch => {
-      const qualityChanged = patch.quality !== undefined && patch.quality !== save.data.quality
-      save.update(patch)
-      applySettings(save.data)
-      if (patch.locale) i18n.set(patch.locale)
-      if (qualityChanged) game?.setQuality(save.data.quality)
+      const previousQuality = save.data.quality
+      const cleanPatch = { ...patch }
+      if (typeof cleanPatch.playerName === 'string') {
+        cleanPatch.playerName = [...cleanPatch.playerName.replace(/[\u0000-\u001f\u007f<>]/g, '').trim()].slice(0, 20).join('') || 'APEX DRIVER'
+      }
+      save.update(cleanPatch)
+      applySettings()
+      if (previousQuality !== save.data.quality) {
+        const quality = save.data.quality
+        renderer?.applyQuality(quality)
+        game?.setQuality(quality)
+      }
+      ui.refreshAll()
     },
+    leaderboard: track => {
+      ui.setBoard({ entries: [], loading: true })
+      void online.list(track).then(board => ui.setBoard(board))
+    },
+    retryScore: () => { void submitResult() },
   })
   ui.show('boot')
-  applySettings(save.data)
+  applySettings()
+  ui.setOnlineStatus('connecting')
 
-  // Boot: the UI above is already on screen; three.js, Rapier (WASM) and the game load as a
-  // separate chunk behind the progress bar. Preload models/textures here too (engine/assets.ts).
-  let loaded = 0
-  const track = <T>(p: Promise<T>): Promise<T> => p.then(v => (ui.setBootProgress(0.1 + (++loaded / 4) * 0.9), v))
-  ui.setBootProgress(0.1)
-  const [{ Game }, { Renderer, suggestQuality }, physics] = await Promise.all([
-    track(import('./game/game')),
-    track(import('./engine/renderer')),
-    track(import('./engine/physics')),
-    track(document.fonts.ready),
-  ])
-  await physics.initPhysics()
-  if (firstRun) {
-    save.update({ quality: suggestQuality() })
-    ui.refreshSettings()
-  }
-
-  const renderer = new Renderer(canvas, save.data.quality)
-  game = new Game(renderer, input, audio, {
-    popup: (text, at, kind) => ui.popup(text, at, kind),
-    hurt: () => ui.hurt(),
-    hint: hint => ui.hint(hint),
-    tutorialDone: () => save.update({ tutorialDone: true }),
-    end: run => {
-      input.unlockPointer()
-      window.setTimeout(() => ui.showResults(run), run.phase === 'won' ? 1400 : 900)
-    },
-  })
-  game.reducedMotion = save.data.reducedMotion
-  if (import.meta.env.DEV) {
-    const [{ registerGameTuning }, { tuning }] = await Promise.all([
-      import('../scripts/manus-tuning/adapter.js'), import('./game/tuning'),
-    ])
-    await registerGameTuning(tuning)
-  }
-  const g = game
-
-  const loop = new GameLoop({
-    beforeFrame: frameSeconds => input.update(frameSeconds),
-    step: dt => g.step(dt),
-    render: (alpha, frameSeconds) => {
-      if (input.consume('pause') && performance.now() - lockLostAt > 300) {
-        if (g.mode === 'playing') pause()
-        else if (g.mode === 'paused' && ui.screen === 'pause') resume()
-      }
-      ui.frame(frameSeconds)
-      loop.paused = g.mode === 'paused'
-      g.render(alpha, frameSeconds)
-      if (g.mode === 'playing' || g.mode === 'ended') ui.updateHud(g.run, g.compass())
-    },
-  })
-  loop.start()
-
-  document.addEventListener('pointerlockchange', () => {
-    // Browsers release pointer lock on Escape without delivering the key: treat that as pause.
-    if (!document.pointerLockElement && g.mode === 'playing' && input.method === 'keyboard') {
-      lockLostAt = performance.now()
-      pause()
-    }
-  })
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) pause()
-  })
-  window.addEventListener('game:pause', pause)
-  canvas.addEventListener('click', () => {
-    if (g.mode === 'playing') input.lockPointer()
-  })
-  new TouchControls(document.getElementById('ui')!, input, () => g.mode === 'playing')
-
-  window.setTimeout(() => ui.show('title'), 250)
-  // Debug/test hook (read-only use): smoke tests inspect run state through it.
-  ;(window as unknown as { __game: unknown }).__game = { game: g, ui, input, save }
-}
-
-function safeGet(key: string): string | null {
   try {
-    return localStorage.getItem(key)
-  } catch {
-    return null
+    const [{ Game: GameClass }, { Renderer, suggestQuality }] = await Promise.all([
+      import('./game/game'),
+      import('./engine/renderer'),
+    ])
+    if (firstRun) {
+      save.update({ quality: suggestQuality() })
+      ui.refreshSettings()
+    }
+    ui.setBootProgress(0.08, 'Building the circuit…')
+    renderer = new Renderer(canvas, save.data.quality)
+    game = new GameClass(renderer, input, audio, {
+      banner: (text, tone) => ui.banner(text, tone),
+      finished: (result, track) => {
+        const record = recordBest(save.data, track.id, result.totalMs, result.bestLapMs)
+        save.update({ trackBests: record.data.trackBests })
+        currentResult = { totalMs: result.totalMs, bestLapMs: result.bestLapMs, lapTimesMs: result.lapTimesMs, track, unranked: result.unranked }
+        ui.showResults({ ...currentResult, raceBest: record.raceBest, lapBest: record.lapBest })
+        void submitResult()
+      },
+    }, save.data.lastTrack, save.data.quality)
+    game.setReducedMotion(save.data.reducedMotion)
+    ui.setSelectedTrack(game.selectedTrackId)
+
+    let modelProgress = 0
+    let audioProgress = 0
+    const updateBoot = (label?: string) => {
+      ui.setBootProgress(0.12 + modelProgress * 0.55 + audioProgress * 0.28, label ?? (modelProgress < 1 ? 'Detailing the hero car…' : 'Tuning the race audio…'))
+    }
+    updateBoot('Detailing the hero car…')
+    const [, audioErrors] = await Promise.all([
+      game.loadHeroCar((fraction, label) => {
+        modelProgress = fraction
+        updateBoot(label)
+      }),
+      audio.loadAll(AUDIO_URLS, (fraction, label) => {
+        audioProgress = fraction
+        updateBoot(label)
+      }),
+      document.fonts.ready,
+    ])
+    if (audioErrors.length) console.warn('Some race audio failed to load.', audioErrors)
+    if (game.loadError) console.warn('Hero car fallback active:', game.loadError)
+    ui.setBootProgress(1, 'Ready to race.')
+    await new Promise(resolve => window.setTimeout(resolve, 180))
+    ui.show('title')
+    ui.refreshAll()
+    syncOnlineStatus()
+    void online.init(save.data.playerName).then(() => syncOnlineStatus())
+
+    const g = game
+    loop = new GameLoop({
+      beforeFrame: () => input.update(),
+      step: dt => g.step(dt),
+      render: (alpha, frameSeconds) => {
+        ui.frame(frameSeconds)
+        if (input.consume('pause')) {
+          if (g.mode === 'playing' || g.mode === 'countdown') {
+            g.pause()
+            ui.show('pause')
+            loop.resetAccumulator()
+          } else if (g.mode === 'paused' && ui.screen === 'pause') {
+            g.resume()
+            ui.show('hud')
+            loop.resetAccumulator()
+          }
+        }
+        g.render(alpha, frameSeconds)
+        if (g.mode === 'playing' || g.mode === 'countdown' || g.mode === 'ended') ui.updateHud(g.snapshot())
+        loop.paused = g.mode !== 'playing' && g.mode !== 'countdown'
+      },
+    })
+    loop.start()
+
+    const unlockAudio = () => {
+      audio.unlock()
+      audio.startMusic()
+    }
+    window.addEventListener('pointerdown', unlockAudio, { once: true })
+    window.addEventListener('keydown', unlockAudio, { once: true })
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && g.mode === 'playing') {
+        g.pause()
+        ui.show('pause')
+        loop.resetAccumulator()
+      }
+    })
+    new TouchControls(root, input, () => g.mode === 'playing' || g.mode === 'countdown')
+
+    const debug = { game: g, ui, input, save, online, audio, tuning, renderer }
+    ;(window as unknown as { __game: unknown }).__game = debug
+    ;(window as unknown as { __apex: unknown }).__apex = debug
+  } catch (error) {
+    console.error(error)
+    ui.setBootError(`The race could not start: ${String((error as Error)?.message ?? error).replace(/[<>&]/g, '')}`)
   }
 }
 
-boot().catch(err => {
-  console.error(err)
+boot().catch(error => {
+  console.error(error)
   const el = document.getElementById('ui')
-  if (el) el.innerHTML = `<div class="fatal">Failed to start: ${String((err as Error)?.message ?? err).replace(/[<>&]/g, '')}</div>`
+  if (el) el.innerHTML = `<div class="fatal">Failed to start: ${String((error as Error)?.message ?? error).replace(/[<>&]/g, '')}</div>`
 })

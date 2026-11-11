@@ -1,87 +1,72 @@
 import type { Input } from '../engine/input'
 
-/**
- * On-screen touch controls: a floating stick on the left half, drag-to-look on the right half,
- * and JUMP / DASH buttons. Enabled automatically on the first touch.
- */
+/** On-screen steering, throttle, drift and boost for coarse-pointer devices. */
 export class TouchControls {
-  private stickId: number | null = null
-  private lookId: number | null = null
-  private origin = { x: 0, y: 0 }
-  private last = { x: 0, y: 0 }
-  private readonly stick: HTMLElement
-  private readonly knob: HTMLElement
+  private steer = 0
+  private throttle = 0
+  private listeners: Array<() => void> = []
+  private readonly buttons: HTMLElement[]
 
-  constructor(root: HTMLElement, private readonly input: Input, private readonly active: () => boolean) {
-    const layer = root.querySelector<HTMLElement>('.touch')!
-    this.stick = layer.querySelector('.touch-stick')!
-    this.knob = this.stick.querySelector('i')!
-    const radius = 56
+  constructor(
+    root: HTMLElement,
+    private readonly input: Input,
+    private readonly isPlaying: () => boolean,
+  ) {
+    this.buttons = [...root.querySelectorAll<HTMLElement>('[data-touch-steer], [data-touch-throttle], [data-touch-action]')]
+    this.bind()
+    root.classList.toggle('has-touch', matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0)
+  }
 
-    const enable = () => document.body.classList.add('has-touch')
-    if (matchMedia('(pointer: coarse)').matches) enable()
-    window.addEventListener('touchstart', enable, { once: true, passive: true })
-    // Any touch switches hints/prompts to touch, even taps on menu buttons.
-    window.addEventListener('pointerdown', e => {
-      if (e.pointerType === 'touch') this.input.method = 'touch'
-    }, { capture: true })
-
-    const canvas = document.querySelector<HTMLCanvasElement>('#game')!
-    canvas.addEventListener('pointerdown', e => {
-      if (e.pointerType !== 'touch' || !this.active()) return
-      if (e.clientX < window.innerWidth * 0.45 && this.stickId === null) {
-        this.stickId = e.pointerId
-        this.origin = { x: e.clientX, y: e.clientY }
-        this.stick.style.left = `${e.clientX}px`
-        this.stick.style.top = `${e.clientY}px`
-        this.stick.classList.add('is-active')
-      } else if (this.lookId === null) {
-        this.lookId = e.pointerId
-        this.last = { x: e.clientX, y: e.clientY }
+  private bind(): void {
+    for (const button of this.buttons) {
+      const down = (event: PointerEvent) => {
+        if (!this.isPlaying()) return
+        event.preventDefault()
+        event.stopPropagation()
+        button.setPointerCapture?.(event.pointerId)
+        button.classList.add('is-pressed')
+        this.apply(button, true)
       }
-    })
-    window.addEventListener('pointermove', e => {
-      if (e.pointerId === this.stickId) {
-        let dx = e.clientX - this.origin.x
-        let dy = e.clientY - this.origin.y
-        const len = Math.hypot(dx, dy)
-        if (len > radius) {
-          dx = (dx / len) * radius
-          dy = (dy / len) * radius
-        }
-        this.knob.style.transform = `translate(${dx}px, ${dy}px)`
-        this.input.setTouchMove(dx / radius, -dy / radius)
-      } else if (e.pointerId === this.lookId) {
-        this.input.addTouchLook(e.clientX - this.last.x, e.clientY - this.last.y)
-        this.last = { x: e.clientX, y: e.clientY }
+      const up = (event: PointerEvent) => {
+        event.preventDefault()
+        button.classList.remove('is-pressed')
+        this.apply(button, false)
       }
-    })
-    const end = (e: PointerEvent) => {
-      if (e.pointerId === this.stickId) {
-        this.stickId = null
-        this.knob.style.transform = ''
-        this.stick.classList.remove('is-active')
-        this.input.setTouchMove(0, 0)
-      }
-      if (e.pointerId === this.lookId) this.lookId = null
-    }
-    window.addEventListener('pointerup', end)
-    window.addEventListener('pointercancel', end)
-
-    for (const btn of layer.querySelectorAll<HTMLElement>('[data-touch]')) {
-      const action = btn.dataset.touch as 'jump' | 'dash'
-      btn.addEventListener('pointerdown', e => {
-        e.preventDefault()
-        btn.setPointerCapture(e.pointerId)
-        btn.classList.add('is-down')
-        this.input.setTouchButton(action, true)
+      button.addEventListener('pointerdown', down)
+      button.addEventListener('pointerup', up)
+      button.addEventListener('pointercancel', up)
+      button.addEventListener('lostpointercapture', up)
+      this.listeners.push(() => {
+        button.removeEventListener('pointerdown', down)
+        button.removeEventListener('pointerup', up)
+        button.removeEventListener('pointercancel', up)
+        button.removeEventListener('lostpointercapture', up)
       })
-      const up = () => {
-        btn.classList.remove('is-down')
-        this.input.setTouchButton(action, false)
-      }
-      btn.addEventListener('pointerup', up)
-      btn.addEventListener('pointercancel', up)
     }
+  }
+
+  private apply(button: HTMLElement, down: boolean): void {
+    if (button.dataset.touchSteer) {
+      const dir = button.dataset.touchSteer === 'left' ? -1 : 1
+      this.steer = down ? dir : 0
+      for (const b of this.buttons) {
+        if (b.dataset.touchSteer && b !== button) b.classList.remove('is-pressed')
+      }
+    } else if (button.dataset.touchThrottle) {
+      const value = Number(button.dataset.touchThrottle)
+      this.throttle = down ? value : 0
+      for (const b of this.buttons) {
+        if (b.dataset.touchThrottle && b !== button) b.classList.remove('is-pressed')
+      }
+    } else if (button.dataset.touchAction) {
+      const action = button.dataset.touchAction === 'drift' ? 'drift' : 'boost'
+      this.input.setTouchButton(action, down)
+    }
+    this.input.setTouchMove(this.steer, this.throttle)
+  }
+
+  dispose(): void {
+    for (const off of this.listeners) off()
+    this.listeners = []
   }
 }

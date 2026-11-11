@@ -1,6 +1,5 @@
-// End-to-end smoke test: builds must already exist in dist/ (`npm run build`).
-// Serves dist/, boots the game in headless Chromium, plays a few seconds, walks the menus in
-// English and Chinese, fails on any console error, and writes screenshots to ./shots/.
+// Racing smoke test: boots the current source through Vite, drives a real car, walks the race
+// lifecycle, checks the three circuits and mobile HUD, and writes screenshots to ./shots/.
 import { spawn } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { chromium } from 'playwright'
@@ -9,11 +8,13 @@ const port = 4300 + Math.floor(Math.random() * 500)
 const url = `http://127.0.0.1:${port}/`
 const out = process.env.SHOTS_DIR ?? 'shots'
 mkdirSync(out, { recursive: true })
-
-const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--port', String(port), '--strictPort', '--host', '127.0.0.1'], { stdio: 'ignore', detached: false })
+const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--port', String(port), '--strictPort', '--host', '127.0.0.1'], {
+  stdio: 'ignore',
+  detached: false,
+  env: { ...process.env, HOST: '127.0.0.1', PORT: String(port) },
+})
 let browser
-const guard = setTimeout(() => fail('timed out'), 120_000)
-
+const guard = setTimeout(() => fail('timed out'), 180_000)
 function cleanup() {
   clearTimeout(guard)
   try { server.kill('SIGTERM') } catch {}
@@ -24,124 +25,135 @@ async function fail(msg) {
   cleanup()
   process.exit(1)
 }
-
 async function waitForServer() {
-  for (let i = 0; i < 60; i += 1) {
-    try {
-      if ((await fetch(url)).ok) return
-    } catch {}
+  for (let i = 0; i < 80; i += 1) {
+    try { if ((await fetch(url)).ok) return } catch {}
     await new Promise(r => setTimeout(r, 250))
   }
-  throw new Error('preview server did not start')
+  throw new Error('Vite server did not start')
 }
-
+const gameState = page => page.evaluate(() => {
+  const { game, online } = window.__game
+  return {
+    mode: game.mode,
+    speed: game.car.speed,
+    progress: game.car.t,
+    lateral: game.car.lateral,
+    elapsed: game.race?.elapsedMs ?? 0,
+    lap: game.race?.lap ?? 0,
+    phase: game.race?.phase ?? null,
+    online: online.status,
+    track: game.selectedTrackId,
+    carFallback: game.carVisual['fallback'],
+  }
+})
 async function openGame(context, errors) {
   const page = await context.newPage()
-  page.on('console', m => m.type() === 'error' && errors.push(m.text()))
-  page.on('pageerror', e => errors.push(String(e)))
-  page.on('response', r => r.status() >= 400 && errors.push(`HTTP ${r.status()} ${r.url()}`))
-  await page.goto(url)
-  await page.waitForSelector('[data-screen="title"].is-active', { timeout: 30_000 })
+  page.on('console', message => message.type() === 'error' && errors.push(message.text()))
+  page.on('pageerror', error => errors.push(String(error)))
+  page.on('response', response => {
+    const target = response.url()
+    if (response.status() >= 400 && !target.includes('/api/') && !target.endsWith('/favicon.ico')) errors.push(`HTTP ${response.status()} ${target}`)
+  })
+  await page.goto(url, { waitUntil: 'networkidle' })
+  await page.waitForSelector('section.screen-title.is-active', { timeout: 60_000 })
   await page.evaluate(async () => {
     await document.fonts.ready
-    const expected = document.documentElement.lang === 'zh-CN' ? 'ManusCC0 Sans CJK SC' : 'ManusCC0'
-    for (const selector of ['.logo-text', '.tagline']) {
-      const family = getComputedStyle(document.querySelector(selector)).fontFamily
-      if (!family.startsWith(`"${expected}"`) && !family.startsWith(expected + ',')) {
-        throw new Error(`Unexpected game font: ${family}`)
-      }
-    }
-    if (![...document.fonts].some(face => face.family.replaceAll('"', '').replaceAll("'", '') === expected && face.status === 'loaded')) {
-      throw new Error(`Bundled font did not load: ${expected}`)
-    }
+    const display = getComputedStyle(document.querySelector('.hero-wordmark')).fontFamily
+    if (!display.includes('ManusCC0')) throw new Error(`Unexpected display font: ${display}`)
   })
-  await page.waitForTimeout(900)
+  await page.evaluate(() => {
+    window.__game.game.setQuality('low')
+    // The smoke path verifies local race settlement without creating a global score.
+    window.__game.online.beginRun = async () => { throw new Error('smoke_offline') }
+  })
+  await page.waitForTimeout(500)
   return page
 }
-
-const state = page => page.evaluate(() => {
-  const { game } = window.__game
-  const p = game['player'].root.position
-  return { mode: game.mode, run: game.run, pos: { x: p.x, y: p.y, z: p.z } }
-})
-
+async function waitForPlaying(page) {
+  await page.waitForFunction(() => window.__game.game.mode === 'playing', null, { timeout: 45_000 })
+}
 try {
   await waitForServer()
-  // Prefer Playwright's bundled Chromium; fall back to an installed Google Chrome.
-  const args = ['--ignore-gpu-blocklist']
-  browser = await chromium.launch({ args }).catch(() => chromium.launch({ args, channel: 'chrome' }))
+  browser = await chromium.launch({ args: ['--ignore-gpu-blocklist', '--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader', '--disable-background-timer-throttling'] })
   const errors = []
-
-  const en = await browser.newContext({ viewport: { width: 1280, height: 720 }, locale: 'en-US' })
-  const page = await openGame(en, errors)
-  await page.screenshot({ path: `${out}/01-title-en.png` })
-
-  await page.click('[data-action="play"]')
-  await page.waitForSelector('[data-screen="hud"].is-active')
-  const before = await state(page)
-  await page.keyboard.down('KeyW')
-  await page.waitForTimeout(700)
-  await page.keyboard.press('Space')
-  await page.waitForTimeout(900)
-  await page.keyboard.up('KeyW')
-  await page.waitForTimeout(600)
-  await page.screenshot({ path: `${out}/02-gameplay.png` })
-  const after = await state(page)
-  const moved = Math.hypot(after.pos.x - before.pos.x, after.pos.z - before.pos.z)
-  if (after.mode !== 'playing') throw new Error(`expected playing, got ${after.mode}`)
-  if (!(after.run.timeLeft < before.run.timeLeft)) throw new Error('clock did not run')
-  if (moved < 2) throw new Error(`player barely moved (${moved.toFixed(2)} m)`)
-  console.log(`smoke: moved ${moved.toFixed(1)} m, clock ${after.run.timeLeft.toFixed(1)} s`)
-
+  const desktop = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'en-US' })
+  const page = await openGame(desktop, errors)
+  await page.screenshot({ path: `${out}/01-title.png` })
+  const title = await gameState(page)
+  if (title.carFallback) throw new Error('generated hero car fell back to procedural geometry')
+  for (const id of ['canyon', 'vault', 'harbor']) {
+    await page.click(`.track-card[data-track-card="${id}"]`)
+    await page.waitForTimeout(250)
+    if ((await gameState(page)).track !== id) throw new Error(`track selection failed for ${id}`)
+  }
+  await page.click('.btn-start')
+  await waitForPlaying(page)
+  const before = await gameState(page)
+  await page.keyboard.down('w')
+  await page.waitForFunction(() => window.__game.game.car.speed > 5, null, { timeout: 25_000 })
+  await page.waitForTimeout(350)
+  await page.keyboard.up('w')
+  const after = await gameState(page)
+  if (!(after.speed > 5)) throw new Error(`car did not accelerate (${after.speed.toFixed(2)} m/s)`)
+  if (!(after.progress > before.progress)) throw new Error('car did not advance along the circuit')
+  await page.screenshot({ path: `${out}/02-race.png` })
   await page.keyboard.press('Escape')
-  await page.waitForSelector('[data-screen="pause"].is-active')
-  await page.waitForTimeout(400)
-  await page.screenshot({ path: `${out}/03-pause.png` })
-  await page.click('[data-screen="pause"] [data-action="settings"]')
-  await page.waitForSelector('[data-screen="settings"].is-active')
-  await page.waitForTimeout(400)
-  await page.screenshot({ path: `${out}/04-settings.png` })
+  await page.waitForSelector('section.screen-pause.is-active')
+  await page.click('section.screen-pause [data-action="settings"]')
+  await page.waitForSelector('section.screen-settings.is-active')
+  await page.waitForTimeout(250)
+  await page.screenshot({ path: `${out}/03-settings.png` })
   await page.keyboard.press('Escape')
-  await page.waitForSelector('[data-screen="pause"].is-active')
-  await page.waitForTimeout(300)
-  if ((await state(page)).mode !== 'paused') throw new Error('leaving Settings with Escape resumed the run')
-
-  // Results: finish the run through the real rules by collecting the remaining cores.
+  await page.waitForSelector('section.screen-pause.is-active')
+  if ((await gameState(page)).mode !== 'paused') throw new Error('Escape from settings did not return to the paused race')
+  await page.click('section.screen-pause [data-action="resume"]')
+  await page.waitForTimeout(250)
   await page.evaluate(() => {
     const { game } = window.__game
-    const cores = game['cores']
-    game.resume()
-    for (const p of cores.remaining()) {
-      game['player'].teleport(p)
-      game.step(1 / 60)
+    if (!game.race) throw new Error('missing race state')
+    game.race.lap = game.race.laps
+    game.race.elapsedMs = 78_000
+    game.race.lapStartedMs = 0
+    game.car.t = 0.97
+    game.car.lateral = 0
+    game.car.speed = 34
+  })
+  await page.waitForSelector('section.screen-results.is-active', { timeout: 30_000 })
+  await page.waitForTimeout(400)
+  await page.screenshot({ path: `${out}/04-results.png` })
+  const result = await gameState(page)
+  if (result.mode !== 'ended' || result.phase !== 'finished') throw new Error(`race did not finish (${result.mode}/${result.phase})`)
+  await desktop.close()
+
+  const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'en-US' })
+  const phone = await openGame(mobile, errors)
+  await phone.screenshot({ path: `${out}/05-mobile-title.png` })
+  await phone.click('.btn-start')
+  await waitForPlaying(phone)
+  await phone.waitForTimeout(300)
+  await phone.screenshot({ path: `${out}/06-mobile-race.png` })
+  const layout = await phone.evaluate(() => {
+    const box = selector => document.querySelector(selector).getBoundingClientRect().toJSON()
+    return {
+      width: innerWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+      timer: box('.hud-timer-block'),
+      pause: box('.hud-pause'),
+      speed: box('.hud-speed'),
+      touch: box('.touch-actions'),
+      touchVisible: getComputedStyle(document.querySelector('.touch-controls')).display,
     }
   })
-  await page.waitForSelector('[data-screen="results"].is-active', { timeout: 10_000 })
-  await page.waitForTimeout(1500)
-  await page.screenshot({ path: `${out}/05-results.png` })
-  const done = await state(page)
-  if (done.run.phase !== 'won') throw new Error(`expected a won run, got ${done.run.phase}`)
-  await en.close()
-
-  const zh = await browser.newContext({ viewport: { width: 1280, height: 720 }, locale: 'zh-CN' })
-  const zhPage = await openGame(zh, errors)
-  const lang = await zhPage.evaluate(() => document.documentElement.lang)
-  if (lang !== 'zh-CN') throw new Error(`browser language not detected (lang=${lang})`)
-  await zhPage.screenshot({ path: `${out}/06-title-zh.png` })
-  await zh.close()
-
-  const phone = await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'zh-CN' })
-  const phonePage = await openGame(phone, errors)
-  await phonePage.tap('[data-action="play"]')
-  await phonePage.waitForSelector('[data-screen="hud"].is-active')
-  await phonePage.waitForTimeout(1200)
-  await phonePage.screenshot({ path: `${out}/07-phone-hud.png` })
-  await phone.close()
-
+  if (layout.scrollWidth > layout.width) throw new Error(`mobile horizontal overflow (${layout.scrollWidth}px > ${layout.width}px)`)
+  if (layout.timer.right > layout.pause.left) throw new Error('mobile timer overlaps the pause button')
+  if (layout.speed.bottom > layout.touch.top) throw new Error('mobile speed readout overlaps the touch actions')
+  if (layout.touchVisible === 'none') throw new Error('touch controls are not visible on a coarse-pointer device')
+  await mobile.close()
   if (errors.length) throw new Error(`console errors:\n  ${errors.join('\n  ')}`)
   await browser.close()
   cleanup()
-  console.log(`smoke: OK — screenshots in ${out}/`)
-} catch (err) {
-  await fail(err?.message ?? String(err))
+  console.log('smoke: OK — title, hero car, 3 circuits, driving, pause/settings, results, and mobile HUD verified')
+} catch (error) {
+  await fail(error?.message ?? String(error))
 }
