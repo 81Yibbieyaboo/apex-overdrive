@@ -150,16 +150,16 @@ export class TrackWorld {
     canvas.width = 256
     canvas.height = 512
     const ctx = canvas.getContext('2d')!
-    ctx.fillStyle = '#303235'
+    ctx.fillStyle = '#111318'
     ctx.fillRect(0, 0, 256, 512)
     const rng = makeRng(82 + this.def.id.length)
     for (let i = 0; i < 2600; i += 1) {
-      const v = 37 + Math.floor(rng() * 28)
+      const v = 18 + Math.floor(rng() * 17)
       ctx.fillStyle = `rgba(${v},${v + 2},${v + 3},${0.22 + rng() * 0.3})`
       ctx.fillRect(rng() * 256, rng() * 512, 1 + rng() * 3, 1 + rng() * 3)
     }
-    ctx.globalAlpha = 0.12
-    ctx.fillStyle = '#ffffff'
+    ctx.globalAlpha = 0.18
+    ctx.fillStyle = '#59616a'
     for (let i = 0; i < 10; i += 1) ctx.fillRect(0, rng() * 512, 256, 1)
     const texture = new THREE.CanvasTexture(canvas)
     texture.wrapS = texture.wrapT = THREE.RepeatWrapping
@@ -238,7 +238,7 @@ export class TrackWorld {
     this.curb(-half + 0.52)
     this.curb(half - 0.52)
     // A slightly darker fascia gives the ribbon physical thickness from the chase camera.
-    const sideMat = this.mat({ color: '#1c2426', roughness: 0.82 })
+    const sideMat = this.mat({ color: '#090b0f', roughness: 0.82 })
     for (const side of [-1, 1]) {
       const lateral = side * (half + 0.02)
       const samples = this.model.samples
@@ -501,7 +501,7 @@ export class TrackWorld {
     group.position.copy(start.pos)
     group.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(start.right, start.normal, start.tangent))
     const half = this.def.width / 2 + 1
-    const beamMat = this.mat({ color: '#192b2d', roughness: 0.55, metalness: 0.18 })
+    const beamMat = this.mat({ color: '#080b10', roughness: 0.5, metalness: 0.28 })
     const accentMat = this.mat({ color: this.def.secondary, emissive: this.def.secondary, emissiveIntensity: 0.65, roughness: 0.4 })
     for (const side of [-1, 1]) {
       const post = new THREE.Mesh(this.own(new THREE.BoxGeometry(0.46, 10.5, 0.46)), beamMat)

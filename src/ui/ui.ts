@@ -32,9 +32,9 @@ const icon = {
 }
 
 const FEATURE_LABEL: Record<TrackId, string> = {
-  harbor: '2 RAMPS  ·  FLOWING',
-  canyon: '3 RAMPS  ·  BIG AIR',
-  vault: '2 RAMPS  ·  WALL RIDE',
+  harbor: '4 RAMPS  ·  WALL RIDE',
+  canyon: '4 RAMPS  ·  WALL RIDE',
+  vault: '4 RAMPS  ·  WALL RIDE',
 }
 
 function esc(value: string): string {
@@ -453,6 +453,7 @@ export class Ui {
     }
     if (hud.mode === 'playing' || hud.mode === 'countdown' || hud.mode === 'ended') this.lastMode = hud.mode
     this.q('.air-state').classList.toggle('is-visible', hud.airborne)
+    this.q('.wall-state').textContent = hud.track.wallRide?.label ?? 'WALL RIDE'
     this.q('.wall-state').classList.toggle('is-visible', hud.wallRiding)
   }
 
@@ -583,7 +584,7 @@ export class Ui {
       <div class="hud-bottom-left">
         <div class="boost-block"><div class="boost-head"><span>BOOST</span><b><span data-slot="boost-pct">38</span>%</b></div><div class="boost-track"><i class="boost-fill"></i></div><div class="boost-keys"><kbd>SHIFT</kbd> FIRE <span>DRIFT TO CHARGE</span></div></div>
         <div class="air-state">AIRBORNE</div>
-        <div class="wall-state">MAGNETIC WALL RIDE</div>
+        <div class="wall-state">WALL RIDE</div>
       </div>
       <div class="hud-speed"><div class="speed-readout"><b data-slot="speed">000</b><span>KM/H</span></div><div class="gear-readout"><span data-slot="gear">G1</span><i>ARCADE SPEC</i></div></div>
       <div class="countdown"><span class="countdown-caption">LIGHTS OUT IN</span><b class="countdown-number">3</b></div>

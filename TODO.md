@@ -3,10 +3,10 @@
 ## Playable core
 - [x] Original low-poly open-wheel car appears in third-person view and drives with responsive throttle, brake, steering, drift, and boost on keyboard, gamepad, and touch.
 - [x] Three distinct lap-based tracks are selectable: Harbor Sprint, Canyon Run, and Vault Ring.
-- [x] Every track includes ramps that launch the car when crossed above the intended speed; landings reward a short boost.
-- [x] Vault Ring includes a dedicated sustained wall-ride section with banked car orientation, camera roll, and readable signage.
+- [x] Every track includes four prominent ramps that launch the car when crossed above the intended speed; landings reward a short boost.
+- [x] All three circuits include dedicated sustained wall-ride sections with banked car orientation, camera roll, and readable signage.
 - [x] Start/finish line, countdown, lap crossings, live race timer, lap timer, restart, pause, results, and personal bests work.
-- [x] Track surfaces, guardrails, curbs, grandstands, environmental scenery, and minimap are readable at racing speed.
+- [x] Circuits are extended by 35% and use near-black asphalt with readable guardrails, curbs, grandstands, environmental scenery, and minimaps at racing speed.
 
 ## Presentation and flow
 - [x] Boot screen is Apex Overdrive-specific with real progress, readable status, and retry on failure.
@@ -25,7 +25,7 @@
 ## Verification
 
 - [x] `pnpm typecheck` passes.
-- [x] `pnpm test` passes: 14 tests across race rules, saves, track geometry, ramps, wall ride, and barrier contact.
+- [x] `pnpm test` passes: 15 tests across race rules, saves, explicit A/D steering, extended track geometry, ramps, wall rides, and barrier contact.
 - [x] `pnpm build` passes with sharing metadata, registered storage paths, and a game-specific favicon/OG cover.
 - [x] `pnpm smoke` passes: hero car, three circuit selections, real throttle movement, pause/settings, results, and portrait mobile HUD.
 - [x] Desktop and mobile visual review completed with no horizontal overflow or HUD collisions.

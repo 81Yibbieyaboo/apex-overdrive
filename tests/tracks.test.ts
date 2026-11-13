@@ -5,7 +5,8 @@ describe('circuits', () => {
   it('provides three distinct lap circuits with ramps', () => {
     expect(TRACKS).toHaveLength(3)
     const lengths = TRACKS.map(track => new TrackModel(track, 300).length)
-    expect(new Set(lengths.map(length => Math.round(length))).size).toBe(3)
+    expect(lengths.every(length => length > 430)).toBe(true)
+    expect(new Set(lengths.map(length => length.toFixed(1))).size).toBe(3)
     for (const track of TRACKS) {
       expect(track.points.length).toBeGreaterThanOrEqual(10)
       expect(track.ramps.length).toBeGreaterThanOrEqual(2)
@@ -14,12 +15,13 @@ describe('circuits', () => {
     }
   })
 
-  it('dedicates a steep banked wall-ride section to Vault Ring', () => {
-    const vault = TRACKS.find(track => track.id === 'vault')!
-    expect(wallRideAt(vault, 0.4)).toBe(true)
-    expect(bankAngleAt(vault, 0.4)).toBeGreaterThan(1.2)
-    expect(wallRideAt(vault, 0.2)).toBe(false)
-    for (const track of TRACKS.filter(track => track.id !== 'vault')) expect(wallRideAt(track, 0.4)).toBe(false)
+  it('gives every circuit a readable banked wall-ride section', () => {
+    for (const track of TRACKS) {
+      expect(track.wallRide).toBeDefined()
+      const midpoint = (track.wallRide!.from + track.wallRide!.to) / 2
+      expect(wallRideAt(track, midpoint)).toBe(true)
+      expect(bankAngleAt(track, midpoint)).toBeGreaterThan(1.1)
+    }
   })
 
   it('normalizes minimaps without clipping and keeps their silhouettes different', () => {

@@ -18,6 +18,11 @@ const MOVE_KEYS = {
   left: ['KeyA', 'ArrowLeft'],
   right: ['KeyD', 'ArrowRight'],
 }
+
+/** Positive steering is right: D/Right; negative steering is left: A/Left. */
+export function keyboardSteer(isDown: (code: string) => boolean): number {
+  return (MOVE_KEYS.right.some(isDown) ? 1 : 0) - (MOVE_KEYS.left.some(isDown) ? 1 : 0)
+}
 const PAD_BINDINGS: Record<Action, number[]> = {
   drift: [0, 5],
   boost: [2, 7],
@@ -83,7 +88,7 @@ export class Input {
 
   update(): void {
     const k = (codes: string[]) => codes.some(code => this.keys.has(code))
-    let x = (k(MOVE_KEYS.right) ? 1 : 0) - (k(MOVE_KEYS.left) ? 1 : 0)
+    let x = keyboardSteer(code => k([code]))
     let y = (k(MOVE_KEYS.up) ? 1 : 0) - (k(MOVE_KEYS.down) ? 1 : 0)
     this.held_.clear()
     for (const [action, codes] of Object.entries(KEY_BINDINGS) as [Action, string[]][]) {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { keyboardSteer } from '../src/engine/input'
 import { countdownLabel, createRace, crossFinishLine, formatRaceTime, formatShortTime, raceResult, tickRace } from '../src/game/rules'
 
 describe('race rules', () => {
@@ -37,5 +38,15 @@ describe('race rules', () => {
     expect(formatShortTime(61_234)).toBe('1:01.2')
     expect(countdownLabel(0.2)).toBe('1')
     expect(countdownLabel(0)).toBe('GO')
+  })
+})
+
+
+describe('keyboard steering', () => {
+  it('keeps A left and D right', () => {
+    expect(keyboardSteer(code => code === 'KeyA')).toBe(-1)
+    expect(keyboardSteer(code => code === 'KeyD')).toBe(1)
+    expect(keyboardSteer(code => code === 'ArrowLeft')).toBe(-1)
+    expect(keyboardSteer(code => code === 'ArrowRight')).toBe(1)
   })
 })

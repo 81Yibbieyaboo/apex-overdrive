@@ -52,7 +52,7 @@ export const TRACKS: TrackDef[] = [
     number: '01',
     subtitle: 'SALTWIND DISTRICT',
     tagline: 'Hold the line. Find the air.',
-    description: 'A wide, flowing dockside loop with two friendly kickers and enough runoff to learn the racing line.',
+    description: 'A longer blacktop dockside loop with four kickers, a raised wall ride, and enough runoff to learn the racing line.',
     difficulty: 'ROOKIE',
     laps: 2,
     width: 14,
@@ -62,14 +62,18 @@ export const TRACKS: TrackDef[] = [
       [-95, 0.3, -45], [-105, 0.1, 5],
     ],
     ramps: [
-      { at: 0.235, height: 2.7, length: 0.05, launch: 0.27 },
-      { at: 0.635, height: 3.1, length: 0.055, launch: 0.3 },
+      { at: 0.18, height: 3.6, length: 0.065, launch: 0.31 },
+      { at: 0.39, height: 2.8, length: 0.055, launch: 0.28 },
+      { at: 0.635, height: 4.2, length: 0.07, launch: 0.34 },
+      { at: 0.86, height: 2.7, length: 0.05, launch: 0.27 },
     ],
     banks: [
       { from: 0.08, to: 0.17, angle: 0.15 },
       { from: 0.36, to: 0.46, angle: 0.18 },
+      { from: 0.48, to: 0.62, angle: 1.18 },
       { from: 0.78, to: 0.88, angle: 0.14 },
     ],
+    wallRide: { from: 0.48, to: 0.62, label: 'DOCKSIDE WALL RIDE' },
     accent: '#ff6b35',
     secondary: '#7ee0c2',
     theme: 'harbor',
@@ -83,7 +87,7 @@ export const TRACKS: TrackDef[] = [
     number: '02',
     subtitle: 'REDLINE GORGE',
     tagline: 'The desert rewards brave feet.',
-    description: 'A fast, technical gorge circuit with three ramps, a huge tabletop jump, and sweeping canyon walls.',
+    description: 'A long blacktop gorge circuit with four ramps, a huge tabletop jump, and a late canyon wall ride.',
     difficulty: 'PRO',
     laps: 2,
     width: 15,
@@ -93,16 +97,19 @@ export const TRACKS: TrackDef[] = [
       [-60, 2.4, -120], [-115, 1.4, -70], [-130, 0.6, -5],
     ],
     ramps: [
-      { at: 0.185, height: 4.8, length: 0.045, launch: 0.33 },
-      { at: 0.545, height: 7.2, length: 0.06, launch: 0.38 },
-      { at: 0.79, height: 4.4, length: 0.045, launch: 0.31 },
+      { at: 0.14, height: 5.4, length: 0.06, launch: 0.35 },
+      { at: 0.36, height: 4.2, length: 0.05, launch: 0.32 },
+      { at: 0.56, height: 8.2, length: 0.075, launch: 0.42 },
+      { at: 0.79, height: 5.1, length: 0.06, launch: 0.35 },
     ],
     banks: [
       { from: 0.1, to: 0.16, angle: 0.2 },
       { from: 0.3, to: 0.37, angle: 0.24 },
       { from: 0.63, to: 0.7, angle: 0.26 },
+      { from: 0.73, to: 0.84, angle: 1.22 },
       { from: 0.87, to: 0.93, angle: 0.2 },
     ],
+    wallRide: { from: 0.73, to: 0.84, label: 'CANYON WALL RIDE' },
     accent: '#ff8a3d',
     secondary: '#ffd45e',
     theme: 'canyon',
@@ -116,7 +123,7 @@ export const TRACKS: TrackDef[] = [
     number: '03',
     subtitle: 'THE VERTICAL',
     tagline: 'Gravity is only a suggestion.',
-    description: 'An arena circuit built around a long magnetic wall ride. Carry speed, trust the downforce, and stay high.',
+    description: 'A long blacktop arena circuit built around a sustained magnetic wall ride and four high-speed launches.',
     difficulty: 'EXPERT',
     laps: 2,
     width: 16,
@@ -126,16 +133,18 @@ export const TRACKS: TrackDef[] = [
       [-60, 3.7, 70], [-95, 3.3, 35],
     ],
     ramps: [
-      { at: 0.16, height: 3.4, length: 0.045, launch: 0.29 },
-      { at: 0.69, height: 4.2, length: 0.05, launch: 0.33 },
+      { at: 0.12, height: 4.8, length: 0.06, launch: 0.34 },
+      { at: 0.23, height: 3.5, length: 0.05, launch: 0.3 },
+      { at: 0.69, height: 5.4, length: 0.07, launch: 0.37 },
+      { at: 0.88, height: 3.6, length: 0.05, launch: 0.3 },
     ],
     banks: [
       { from: 0.05, to: 0.12, angle: 0.2 },
-      { from: 0.3, to: 0.49, angle: 1.32 },
+      { from: 0.3, to: 0.57, angle: 1.38 },
       { from: 0.58, to: 0.66, angle: 0.24 },
       { from: 0.84, to: 0.92, angle: 0.22 },
     ],
-    wallRide: { from: 0.3, to: 0.49, label: 'MAGNETIC WALL RIDE' },
+    wallRide: { from: 0.3, to: 0.57, label: 'MAGNETIC WALL RIDE' },
     accent: '#ff6b35',
     secondary: '#7ee0c2',
     theme: 'vault',
@@ -165,6 +174,7 @@ export type SurfacePose = {
 }
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
+const CIRCUIT_SCALE = 1.35
 const clamp01 = (v: number) => THREE.MathUtils.clamp(v, 0, 1)
 const wrap01 = (v: number) => ((v % 1) + 1) % 1
 const smooth = (v: number) => {
@@ -231,7 +241,7 @@ export class TrackModel {
   constructor(readonly def: TrackDef, count = 900) {
     this.count = count
     const curve = new THREE.CatmullRomCurve3(
-      def.points.map(([x, y, z]) => new THREE.Vector3(x, y, z)),
+      def.points.map(([x, y, z]) => new THREE.Vector3(x * CIRCUIT_SCALE, y, z * CIRCUIT_SCALE)),
       true,
       'centripetal',
       0.5,
@@ -335,7 +345,7 @@ export function formatDifficulty(difficulty: TrackDef['difficulty']): string {
 /** Normalised 2D points for a crisp minimap in the menu and HUD. */
 export function trackMapPoints(track: TrackDef, count = 72): Array<[number, number]> {
   const curve = new THREE.CatmullRomCurve3(
-    track.points.map(([x, y, z]) => new THREE.Vector3(x, y, z)),
+    track.points.map(([x, y, z]) => new THREE.Vector3(x * CIRCUIT_SCALE, y, z * CIRCUIT_SCALE)),
     true,
     'centripetal',
     0.5,
